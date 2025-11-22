@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIVE LABS | Cloud Complaint Portal</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        /* Same Styles as before - Optimized for Mobile & Desktop */
+        :root { --primary: #2563eb; --dark: #0f172a; --light: #f1f5f9; --danger: #dc2626; --success: #16a34a; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: var(--light); min-height: 100vh; display: flex; flex-direction: column; }
+        
+        .navbar { background: var(--dark); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .brand { font-weight: bold; font-size: 1.2rem; }
+        .container { padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .hidden { display: none !important; }
+        
+        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 4px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; }
+        .btn-primary { background: var(--primary); width: 100%; }
+        .btn-danger { background: var(--danger); }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+        th { background: #f8fafc; }
+        
+        /* Responsive Table for Phones */
+        @media (max-width: 600px) {
+            table, thead, tbody, th, td, tr { display: block; }
+            thead tr { position: absolute; top: -9999px; left: -9999px; }
+            tr { border: 1px solid #ccc; margin-bottom: 10px; border-radius: 8px; padding: 10px; }
+            td { border: none; position: relative; padding-left: 50%; margin-bottom: 5px; }
+            td:before { position: absolute; top: 10px; left: 10px; width: 45%; padding-right: 10px; white-space: nowrap; font-weight: bold; content: attr(data-label); }
+        }
+
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 999; }
+        .modal-box { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 500px; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar hidden" id="navBar">
+        <div class="brand">LIVE LABS</div>
+        <button class="btn btn-danger" style="width:auto; padding: 5px 15px;" onclick="logout()">Logout</button>
+    </nav>
+
+    <div class="container">
+        <div id="loginSection" class="card" style="max-width:400px; margin: 50px auto;">
+            <h2 style="text-align:center; margin-bottom:20px;">Login</h2>
+            <p id="loginMsg" style="color:blue; text-align:center; display:none;">Connecting to Cloud...</p>
+            <form onsubmit="handleLogin(event)">
+                <input id="uName" placeholder="Username" required>
+                <input type="password" id="uPass" placeholder="Password" required>
+                <button class="btn btn-primary" id="loginBtn">Login</button>
+            </form>
+        </div>
+
+        <div id="userDashboard" class="hidden">
+            <div class="card">
+                <h3>Raise Complaint</h3>
+                <form onsubmit="submitTicket(event)">
+                    <textarea id="tDesc" rows="3" placeholder="Describe issue..." required></textarea>
+                    <select id="tPrio"><option>Low</option><option>Medium</option><option>High</option></select>
+                    <label>Attachment (Name only in demo)</label>
+                    <input type="file" id="tFile">
+                    <button class="btn btn-primary">Submit Ticket</button>
+                </form>
+            </div>
+            <div class="card">
+                <h3>My History</h3>
+                <div id="userTicketsList">Loading...</div>
+            </div>
+        </div>
+
+        <div id="adminDashboard" class="hidden">
+            <div class="card">
+                <h3>All Complaints (Live Sync)</h3>
+                <button onclick="exportReport('pdf')" class="btn" style="background:#f43f5e; margin-bottom:10px; width:auto;">PDF Report</button>
+                <button onclick="exportReport('excel')" class="btn" style="background:#10b981; margin-bottom:10px; width:auto;">Excel Report</button>
+                <table id="adminTable">
+                    <thead><tr><th>User</th><th>Issue</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            
+            <div class="card" id="createUserPanel">
+                <h3>Create New User</h3>
+                <form onsubmit="createNewUser(event)">
+                    <input id="newU" placeholder="New Username" required>
+                    <input id="newP" placeholder="New Password" required>
+                    <select id="newR"><option value="User">User</option><option value="Sub-Admin">Sub-Admin</option></select>
+                    <button class="btn btn-primary">Create Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="capaModal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h3>Close Ticket: Required Actions</h3>
+            <label>Corrective Action</label>
+            <textarea id="caInput"></textarea>
+            <label>Preventive Action</label>
+            <textarea id="paInput"></textarea>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button class="btn btn-danger" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmClose()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, where, onSnapshot, updateDoc, doc, setDoc } 
+        from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // --- PASTE YOUR CONFIG HERE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSy...", 
+            authDomain: "livelabs-portal.firebaseapp.com",
+            projectId: "livelabs-portal",
+            storageBucket: "livelabs-portal.appspot.com",
+            messagingSenderId: "...",
+            appId: "..."
+        };
+        // ------------------------------
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // GLOBAL STATE
+        let currentUser = null;
+        let currentTicketId = null;
+
+        // --- LOGIN LOGIC ---
+        window.handleLogin = async (e) => {
+            e.preventDefault();
+            const u = document.getElementById('uName').value;
+            const p = document.getElementById('uPass').value;
+            const btn = document.getElementById('loginBtn');
+            const msg = document.getElementById('loginMsg');
+            
+            btn.innerText = "Checking...";
+            msg.style.display = 'block';
+
+            try {
+                // First, check if it's the Master Admin (Hardcoded for safety)
+                if (u === 'Admin' && p === 'Admin') {
+                    currentUser = { username: 'Admin', role: 'Admin' };
+                    loadApp();
+                    return;
+                }
+
+                // Check Firestore for other users
+                const q = query(collection(db, "users"), where("username", "==", u), where("password", "==", p));
+                const snapshot = await getDocs(q);
+
+                if (!snapshot.empty) {
+                    const userData = snapshot.docs[0].data();
+                    currentUser = userData;
+                    loadApp();
+                } else {
+                    alert("Invalid Username or Password");
+                    btn.innerText = "Login";
+                }
+            } catch (error) {
+                alert("Connection Error: " + error.message);
+                console.error(error);
+            }
+        };
+
+        function loadApp() {
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('navBar').classList.remove('hidden');
+
+            if (currentUser.role === 'User') {
+                document.getElementById('userDashboard').classList.remove('hidden');
+                listenToMyTickets();
+            } else {
+                document.getElementById('adminDashboard').classList.remove('hidden');
+                listenToAllTickets();
+                if(currentUser.role !== 'Admin') document.getElementById('createUserPanel').classList.add('hidden');
+            }
+        }
+
+        window.logout = () => location.reload();
+
+        // --- USER FUNCTIONS ---
+        window.submitTicket = async (e) => {
+            e.preventDefault();
+            const desc = document.getElementById('tDesc').value;
+            const prio = document.getElementById('tPrio').value;
+            const fileInput = document.getElementById('tFile');
+            const fileName = fileInput.files.length > 0 ? fileInput.files[0].name : "No File";
+
+            try {
+                await addDoc(collection(db, "tickets"), {
+                    user: currentUser.username,
+                    desc: desc,
+                    prio: prio,
+                    file: fileName,
+                    status: 'Open',
+                    date: new Date().toLocaleDateString(),
+                    timestamp: Date.now(), // for sorting
+                    ca: '',
+                    pa: ''
+                });
+                alert("Complaint Sent to Cloud!");
+                e.target.reset();
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        };
+
+        function listenToMyTickets() {
+            const q = query(collection(db, "tickets"), where("user", "==", currentUser.username));
+            onSnapshot(q, (snapshot) => {
+                const div = document.getElementById('userTicketsList');
+                div.innerHTML = "";
+                if(snapshot.empty) div.innerHTML = "No tickets found.";
+                
+                snapshot.forEach(doc => {
+                    const t = doc.data();
+                    div.innerHTML += `
+                        <div style="border-bottom:1px solid #eee; padding:10px;">
+                            <strong>${t.date}</strong> - ${t.desc} <br>
+                            Status: <b style="color:${t.status==='Closed'?'green':'orange'}">${t.status}</b>
+                        </div>`;
+                });
+            });
+        }
+
+        // --- ADMIN FUNCTIONS ---
+        function listenToAllTickets() {
+            const q = query(collection(db, "tickets"));
+            onSnapshot(q, (snapshot) => {
+                const tbody = document.querySelector('#adminTable tbody');
+                tbody.innerHTML = "";
+                
+                snapshot.forEach(docSnap => {
+                    const t = docSnap.data();
+                    const id = docSnap.id;
+                    const isClosed = t.status === 'Closed';
+                    
+                    const actionHtml = isClosed 
+                        ? `<span style="color:green">Closed</span>` 
+                        : `<button onclick="updateStatus('${id}', 'Under Process')">Process</button>
+                           <button onclick="openCapaModal('${id}')" style="background:red; color:white; border:none; padding:3px 8px;">Close</button>`;
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td data-label="User">${t.user}</td>
+                            <td data-label="Issue">
+                                ${t.desc}<br>
+                                <small>Priority: ${t.prio} | File: ${t.file}</small>
+                            </td>
+                            <td data-label="Status">${t.status}</td>
+                            <td data-label="Actions">${actionHtml}</td>
+                        </tr>`;
+                });
+            });
+        }
+
+        window.createNewUser = async (e) => {
+            e.preventDefault();
+            const u = document.getElementById('newU').value;
+            const p = document.getElementById('newP').value;
+            const r = document.getElementById('newR').value;
+
+            try {
+                await addDoc(collection(db, "users"), { username: u, password: p, role: r });
+                alert("User created in Cloud Database");
+                e.target.reset();
+            } catch (err) { alert(err.message); }
+        };
+
+        // --- STATUS UPDATES & CAPA ---
+        window.updateStatus = async (id, status) => {
+            const ref = doc(db, "tickets", id);
+            await updateDoc(ref, { status: status });
+        };
+
+        window.openCapaModal = (id) => {
+            currentTicketId = id;
+            document.getElementById('capaModal').classList.remove('hidden');
+        };
+
+        window.closeModal = () => document.getElementById('capaModal').classList.add('hidden');
+
+        window.confirmClose = async () => {
+            const ca = document.getElementById('caInput').value;
+            const pa = document.getElementById('paInput').value;
+            if(!ca || !pa) return alert("Fill all fields");
+
+            const ref = doc(db, "tickets", currentTicketId);
+            await updateDoc(ref, { status: 'Closed', ca: ca, pa: pa });
+            closeModal();
+        };
+
+        // --- REPORTS ---
+        window.exportReport = async (type) => {
+            const snapshot = await getDocs(collection(db, "tickets"));
+            const data = [];
+            snapshot.forEach(d => data.push(d.data()));
+
+            if(type === 'excel') {
+                let csv = "Date,User,Desc,Priority,Corrective,Preventive,Status\n";
+                data.forEach(t => { csv += `${t.date},${t.user},"${t.desc}",${t.prio},"${t.ca}","${t.pa}",${t.status}\n`; });
+                const link = document.createElement("a");
+                link.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
+                link.download = "LiveLabs_Report.csv";
+                link.click();
+            } else {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('l');
+                doc.text("LIVE LABS REPORT", 10, 10);
+                doc.autoTable({
+                    head: [['Date','User','Desc','Prio','Corrective','Preventive','Status']],
+                    body: data.map(t => [t.date,t.user,t.desc,t.prio,t.ca,t.pa,t.status])
+                });
+                doc.save("Report.pdf");
+            }
+        };
+    </script>
+</body>
+</html>
